@@ -1,0 +1,14 @@
+.snakemake/
+*.fa
+*.bam
+*.fastq.gz
+*.amb
+*.bwt
+*.pac
+*.ann
+*.sa
+*.root
+*.svg
+sv_results/
+alignments/
+qc/

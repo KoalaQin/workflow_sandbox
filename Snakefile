@@ -1,0 +1,95 @@
+# Snakefile for WGS alignment and SV calling
+
+SAMPLES = ["HG002"]
+REF = "chr21.fa"
+
+rule all:
+    input:
+        expand("sv_results/manta/{sample}/results/variants/diploidSV.vcf", sample=SAMPLES)
+
+##################################
+# Validate fastq files
+##################################
+
+rule validate_fastq:
+    input:
+        r1=lambda wc: f"{wc.sample}_R1.fastq.gz",
+        r2=lambda wc: f"{wc.sample}_R2.fastq.gz"
+    output:
+        "qc/{sample}.validated"
+    shell:
+        """
+        biopet-validatefastq -i {input.r1} -j {input.r2}
+        touch {output}
+        """
+
+##################################
+# BWA indexing
+##################################
+
+rule bwa_index:
+    input:
+        ref=REF
+    output:
+        expand("{ref}.{ext}", ref=REF, ext=["bwt", "pac", "ann", "sa", "amb"])
+    conda: "envs/bwa.yaml"
+    shell:
+        "bwa index {input.ref}"
+
+##################################
+# Alignment and BAM preprocessing
+##################################
+
+rule bwa_mem:
+    input:
+        ref=REF,
+        idx=rules.bwa_index.output, 
+        qc="qc/{sample}.validated",
+        r1=lambda wc: f"{wc.sample}_R1.fastq.gz",
+        r2=lambda wc: f"{wc.sample}_R2.fastq.gz"
+    output:
+        temp("alignments/{sample}.unsorted.bam")
+    threads: 4
+    conda: "envs/bwa.yaml"
+    shell:
+        "bwa mem -t {threads} {input.ref} {input.r1} {input.r2} | samtools view -b - > {output}"
+
+rule samtools_sort:
+    input:
+        "alignments/{sample}.unsorted.bam"
+    output:
+        temp("alignments/{sample}.sorted.bam")
+    threads: 4
+    shell:
+        "samtools sort -@ {threads} -o {output} {input}"
+
+rule samtools_mdup:
+    input:
+        "alignments/{sample}.sorted.bam"
+    output:
+        "alignments/{sample}.dupmarked.bam",
+        "alignments/{sample}.dupmarked.bam.bai"
+    threads: 4
+    shell:
+        """
+        samtools markdup -@ {threads} {input} {output[0]}
+        samtools index {output[0]}
+        """
+
+##################################
+# Structural variant calling
+##################################
+
+rule manta:
+    input:
+        bam="alignments/{sample}.dupmarked.bam",
+        ref=REF
+    output:
+        "sv_results/manta/{sample}/results/variants/diploidSV.vcf"
+    threads: 4
+    conda: "envs/manta.yaml"
+    shell:
+        """
+        configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir sv_results/manta/{wildcards.sample}
+        sv_results/manta/{wildcards.sample}/runWorkflow.py -m local -j {threads}
+        """
