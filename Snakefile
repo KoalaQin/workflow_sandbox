@@ -1,6 +1,6 @@
 # Snakefile for WGS alignment and SV calling
 
-SAMPLES = ["HG002"]
+SAMPLES = ["test"]
 REF = "chr21.fa"
 
 rule all:
