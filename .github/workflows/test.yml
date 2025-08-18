@@ -24,7 +24,7 @@ jobs:
           gdown https://drive.google.com/uc?id=15IdZfGh_ZCWCOcfOW4Qdbxi42QQ2DB4F -O chr21.fa
 
       - name: Install snakemake
-        run: conda install -c bioconda snakemake
+        run: conda create -c conda-forge -c bioconda -n snakemake snakemake-minimal
       - name: Run pipeline
         run: snakemake --cores 4 --use-conda -n
 
