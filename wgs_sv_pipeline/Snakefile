@@ -43,7 +43,7 @@ rule bwa_index:
 rule bwa_mem:
     input:
         ref=REF,
-        idx=rules.bwa_index.output, 
+        idx=rules.bwa_index.output,
         qc="qc/{sample}.validated",
         r1=lambda wc: f"{wc.sample}_R1.fastq.gz",
         r2=lambda wc: f"{wc.sample}_R2.fastq.gz"
