@@ -111,7 +111,7 @@ rule manta:
         bam="intermediate_files/alignments/{sample}.dupmarked.bam",
         ref=REF
     output:
-        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf"
+        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
     threads: 16
     conda: "envs/manta.yaml"
     shell:
