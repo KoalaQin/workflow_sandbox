@@ -67,15 +67,28 @@ rule bwa_mem:
         bwa mem -t {threads} {input.ref} {input.r1} {input.r2} | samtools view -b - > {output}
         """
 
+rule samtools_fixmate:
+input:
+
 rule samtools_sort:
     input:
         "intermediate_files/alignments/{sample}.unsorted.bam"
     output:
-        temp("intermediate_files/alignments/{sample}.sorted.bam")
-    threads: 8
+        "intermediate_files/alignments/{sample}.fixmate.bam"
+    threads: 16
     conda: "envs/bwa.yaml"
     shell:
-        "samtools sort -@ {threads} -o {output} {input}"
+        "samtools fixmate -O bam, level=1 -@ {threads} -m {input} {output}"
+
+rule samtools_sort:
+    input:
+        "intermediate_files/alignments/{sample}.fixmate.bam"
+    output:
+        temp("intermediate_files/alignments/{sample}.sorted.bam")
+    threads: 16
+    conda: "envs/bwa.yaml"
+    shell:
+        "samtools sort -l 1 -@ {threads} -o {output} {input}"
 
 rule samtools_mdup:
     input:
@@ -83,11 +96,11 @@ rule samtools_mdup:
     output:
         "intermediate_files/alignments/{sample}.dupmarked.bam",
         "intermediate_files/alignments/{sample}.dupmarked.bam.bai"
-    threads: 8
+    threads: 16
     conda: "envs/bwa.yaml"
     shell:
         """
-        samtools markdup -@ {threads} {input} {output[0]}
+        samtools markdup -O bam,level=9 -@ {threads} {input} {output[0]}
         samtools index {output[0]}
         """
 
@@ -101,7 +114,7 @@ rule manta:
         ref=REF
     output:
         "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf"
-    threads: 8
+    threads: 16
     conda: "envs/manta.yaml"
     shell:
         """
