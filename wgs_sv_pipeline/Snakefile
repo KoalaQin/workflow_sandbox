@@ -137,7 +137,7 @@ rule vcf_to_csv:
 
 rule cleanup:
     input:
-        expand("results/{sample}_manta_sv.csv", sample=SAMPLES)  # Fixed filename
+        expand("results/{sample}_manta_sv.csv", sample=SAMPLES)
     output:
         "cleanup.done"
     shell:

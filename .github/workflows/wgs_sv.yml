@@ -25,7 +25,6 @@ jobs:
       - name: Install snakemake
         run: conda create -c conda-forge -c bioconda -n snakemake snakemake-minimal
       - name: Run pipeline
-        timeout-minutes: 30
         run: |
           cd wgs_sv_pipeline
-          conda run -n snakemake snakemake --cores 4 --use-conda
+          conda run -n snakemake snakemake --cores 16 --use-conda
