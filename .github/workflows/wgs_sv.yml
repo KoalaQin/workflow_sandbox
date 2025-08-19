@@ -5,16 +5,11 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -l {0}  # This enables conda activate
     steps:
       - uses: actions/checkout@v4
       - uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
-          activate-environment: snakemake
-          environment-file: false  # We'll create the env manually
 
       - name: Install Python and gdown
         run: |
@@ -23,14 +18,14 @@ jobs:
 
       - name: Download small test FASTQ from Google Drive
         run: |
+          # Replace FILE_ID with the Google Drive file ID
           gdown https://drive.google.com/uc?id=13o7mn5jqXNbolgecgzcd-cLdRQVIJY-J -O test_R1.fastq.gz
           gdown https://drive.google.com/uc?id=1VGT01sqblXHarMHjlkfs8ZjHIZykJt0R -O test_R2.fastq.gz
           gdown https://drive.google.com/uc?id=15IdZfGh_ZCWCOcfOW4Qdbxi42QQ2DB4F -O chr21.fa
 
       - name: Install snakemake
-        run: conda install -c conda-forge -c bioconda snakemake-minimal
-
+        run: conda create -c conda-forge -c bioconda -n snakemake snakemake-minimal
       - name: Run pipeline
         run: |
           cd wgs_sv_pipeline
-          snakemake --cores 8 --use-conda -n
+          conda run -n snakemake snakemake --cores 8 --use-conda -n
