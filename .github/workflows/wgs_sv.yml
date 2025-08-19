@@ -27,4 +27,4 @@ jobs:
       - name: Run pipeline
         run: |
           cd wgs_sv_pipeline
-          conda run -n snakemake snakemake --cores 8 --use-conda -n
+          conda run -n snakemake snakemake --cores 16 --use-conda

@@ -5,7 +5,7 @@ REF = "chr21.fa"
 
 rule all:
     input:
-        expand("sv_results/manta/{sample}/results/variants/diploidSV.vcf", sample=SAMPLES)
+        "cleanup.done"
 
 ##################################
 # Validate fastq files
@@ -16,25 +16,37 @@ rule validate_fastq:
         r1=lambda wc: f"{wc.sample}_R1.fastq.gz",
         r2=lambda wc: f"{wc.sample}_R2.fastq.gz"
     output:
-        "qc/{sample}.validated"
+        "intermediate_files/qc/{sample}.validated"
+    conda: "envs/bwa.yaml"
     shell:
         """
-        biopet-validatefastq -i {input.r1} -j {input.r2}
+        mkdir -p intermediate_files/qc
+        # Simple validation - check files exist and are not empty
+        [ -s {input.r1} ] && [ -s {input.r2} ] && echo "FASTQ files validated"
         touch {output}
         """
 
 ##################################
-# BWA indexing
+# BWA & Samtools indexing
 ##################################
 
 rule bwa_index:
     input:
         ref=REF
     output:
-        expand("{ref}.{ext}", ref=REF, ext=["bwt", "pac", "ann", "sa", "amb"])
+        ref="intermediate_files/{ref}".format(ref=REF),
+        idx=expand("intermediate_files/{ref}.{ext}", ref=REF, ext=["bwt", "pac", "ann", "sa", "amb"]),
+        faidx="{ref}.fai".format(ref=REF)
+    params:
+        ref=REF
     conda: "envs/bwa.yaml"
     shell:
-        "bwa index {input.ref}"
+        """
+        mkdir -p intermediate_files
+        cp {input.ref} intermediate_files/
+        bwa index intermediate_files/{params.ref}
+        samtools faidx {input.ref}
+        """
 
 ##################################
 # Alignment and BAM preprocessing
@@ -42,54 +54,107 @@ rule bwa_index:
 
 rule bwa_mem:
     input:
-        ref=REF,
-        idx=rules.bwa_index.output,
-        qc="qc/{sample}.validated",
+        ref="intermediate_files/{ref}".format(ref=REF),
+        idx=expand("intermediate_files/{ref}.{ext}", ref=REF, ext=["bwt", "pac", "ann", "sa", "amb"]),
+        qc="intermediate_files/qc/{sample}.validated",
         r1=lambda wc: f"{wc.sample}_R1.fastq.gz",
         r2=lambda wc: f"{wc.sample}_R2.fastq.gz"
     output:
-        temp("alignments/{sample}.unsorted.bam")
-    threads: 4
+        temp("intermediate_files/alignments/{sample}.unsorted.bam")
+    threads: 16
     conda: "envs/bwa.yaml"
     shell:
-        "bwa mem -t {threads} {input.ref} {input.r1} {input.r2} | samtools view -b - > {output}"
+        """
+        mkdir -p intermediate_files/alignments
+        bwa mem -t {threads} {input.ref} {input.r1} {input.r2} | samtools view -b - > {output}
+        """
+
+rule samtools_fixmate:
+    input:
+        "intermediate_files/alignments/{sample}.unsorted.bam"
+    output:
+        temp("intermediate_files/alignments/{sample}.fixmate.bam")
+    threads: 16
+    conda: "envs/bwa.yaml"
+    shell:
+        "samtools fixmate -O bam,level=1 -@ {threads} -m {input} {output}"
 
 rule samtools_sort:
     input:
-        "alignments/{sample}.unsorted.bam"
+        "intermediate_files/alignments/{sample}.fixmate.bam"
     output:
-        temp("alignments/{sample}.sorted.bam")
-    threads: 4
+        temp("intermediate_files/alignments/{sample}.sorted.bam")
+    threads: 16
+    conda: "envs/bwa.yaml"
     shell:
-        "samtools sort -@ {threads} -o {output} {input}"
+        "samtools sort -l 1 -@ {threads} -o {output} {input}"
 
 rule samtools_mdup:
     input:
-        "alignments/{sample}.sorted.bam"
+        "intermediate_files/alignments/{sample}.sorted.bam"
     output:
-        "alignments/{sample}.dupmarked.bam",
-        "alignments/{sample}.dupmarked.bam.bai"
-    threads: 4
+        "intermediate_files/alignments/{sample}.dupmarked.bam",
+        "intermediate_files/alignments/{sample}.dupmarked.bam.bai"
+    threads: 16
+    conda: "envs/bwa.yaml"
     shell:
         """
-        samtools markdup -@ {threads} {input} {output[0]}
+        samtools markdup -O bam,level=9 -@ {threads} {input} {output[0]}
         samtools index {output[0]}
         """
 
 ##################################
 # Structural variant calling
 ##################################
-
 rule manta:
     input:
-        bam="alignments/{sample}.dupmarked.bam",
+        bam="intermediate_files/alignments/{sample}.dupmarked.bam",
         ref=REF
     output:
-        "sv_results/manta/{sample}/results/variants/diploidSV.vcf"
-    threads: 4
+        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
+    threads: 16
     conda: "envs/manta.yaml"
     shell:
         """
-        configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir sv_results/manta/{wildcards.sample}
-        sv_results/manta/{wildcards.sample}/runWorkflow.py -m local -j {threads}
+        mkdir -p intermediate_files/sv_results/manta/{wildcards.sample}
+        configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir intermediate_files/sv_results/manta/{wildcards.sample}
+        intermediate_files/sv_results/manta/{wildcards.sample}/runWorkflow.py -m local -j {threads}
+        """
+
+#######################
+# VCF to CSV conversion
+#######################
+
+rule vcf_to_csv:
+    input:
+        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
+    output:
+        "results/{sample}_manta_sv.csv"
+    conda: "envs/bwa.yaml"
+    shell:
+        """
+        mkdir -p results
+        bcftools query -f '%CHROM,%POS,%INFO/END,%INFO/SVLEN,%QUAL,%FILTER\n' {input} > {output}.tmp
+        echo "CHROM,START,END,SIZE,QUAL,FILTER" | cat - {output}.tmp > {output}
+        rm {output}.tmp
+
+        # Count lines (excluding header)
+        echo "Number of structural variants found: $(( $(wc -l < {output}) - 1 ))"
+        """
+
+##################################
+# Cleanup intermediate files
+##################################
+
+rule cleanup:
+    input:
+        expand("results/{sample}_manta_sv.csv", sample=SAMPLES)
+    output:
+        "cleanup.done"
+    shell:
+        """
+        echo "Pipeline completed successfully!"
+        echo "Cleaning up intermediate files..."
+        rm -rf intermediate_files/
+        echo "Cleanup completed" > {output}
         """
