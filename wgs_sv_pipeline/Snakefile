@@ -5,7 +5,7 @@ REF = "chr21.fa"
 
 rule all:
     input:
-        expand("results/{sample}_manta_sv.csv", sample=SAMPLES)
+        "cleanup.done"
 
 ##################################
 # Validate fastq files
@@ -27,7 +27,7 @@ rule validate_fastq:
         """
 
 ##################################
-# BWA indexing
+# BWA & Samtools indexing
 ##################################
 
 rule bwa_index:
@@ -35,7 +35,8 @@ rule bwa_index:
         ref=REF
     output:
         ref="intermediate_files/{ref}".format(ref=REF),
-        idx=expand("intermediate_files/{ref}.{ext}", ref=REF, ext=["bwt", "pac", "ann", "sa", "amb"])
+        idx=expand("intermediate_files/{ref}.{ext}", ref=REF, ext=["bwt", "pac", "ann", "sa", "amb"]),
+        faidx="{ref}.fai".format(ref=REF)
     params:
         ref=REF
     conda: "envs/bwa.yaml"
@@ -44,6 +45,7 @@ rule bwa_index:
         mkdir -p intermediate_files
         cp {input.ref} intermediate_files/
         bwa index intermediate_files/{params.ref}
+        samtools faidx {input.ref}
         """
 
 ##################################
@@ -71,11 +73,11 @@ rule samtools_fixmate:
     input:
         "intermediate_files/alignments/{sample}.unsorted.bam"
     output:
-        "intermediate_files/alignments/{sample}.fixmate.bam"
+        temp("intermediate_files/alignments/{sample}.fixmate.bam")
     threads: 16
     conda: "envs/bwa.yaml"
     shell:
-        "samtools fixmate -O bam, level=1 -@ {threads} -m {input} {output}"
+        "samtools fixmate -O bam,level=1 -@ {threads} -m {input} {output}"
 
 rule samtools_sort:
     input:
@@ -104,7 +106,6 @@ rule samtools_mdup:
 ##################################
 # Structural variant calling
 ##################################
-
 rule manta:
     input:
         bam="intermediate_files/alignments/{sample}.dupmarked.bam",
@@ -126,7 +127,7 @@ rule manta:
 
 rule vcf_to_csv:
     input:
-        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf"
+        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
     output:
         "results/{sample}_manta_sv.csv"
     conda: "envs/bwa.yaml"
