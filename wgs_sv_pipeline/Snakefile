@@ -68,9 +68,6 @@ rule bwa_mem:
         """
 
 rule samtools_fixmate:
-input:
-
-rule samtools_sort:
     input:
         "intermediate_files/alignments/{sample}.unsorted.bam"
     output:
