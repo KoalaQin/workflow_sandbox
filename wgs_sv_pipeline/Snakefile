@@ -102,7 +102,7 @@ rule vcf_to_csv:
     input:
         "sv_results/manta/{sample}/results/variants/diploidSV.vcf"
     output:
-        "results/{sample}_structural_variants.csv"
+        "results/{sample}_manta_sv.csv"
     conda: "envs/bcftools.yaml"
     shell:
         """
