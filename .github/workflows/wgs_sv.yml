@@ -1,9 +1,9 @@
-name: Test calling SV from WGS pipeline
+name: Test pipeline
 
 on: [push, pull_request]
 
 jobs:
-  test:
+  test_wgs_sv:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,10 +18,9 @@ jobs:
 
       - name: Download small test FASTQ from Google Drive
         run: |
-          # Replace FILE_ID with the Google Drive file ID
-          gdown https://drive.google.com/uc?id=13o7mn5jqXNbolgecgzcd-cLdRQVIJY-J -O test_R1.fastq.gz
-          gdown https://drive.google.com/uc?id=1VGT01sqblXHarMHjlkfs8ZjHIZykJt0R -O test_R2.fastq.gz
-          gdown https://drive.google.com/uc?id=15IdZfGh_ZCWCOcfOW4Qdbxi42QQ2DB4F -O chr21.fa
+          gdown https://drive.google.com/uc?id=13o7mn5jqXNbolgecgzcd-cLdRQVIJY-J -O wgs_sv_pipeline/test_R1.fastq.gz
+          gdown https://drive.google.com/uc?id=1VGT01sqblXHarMHjlkfs8ZjHIZykJt0R -O wgs_sv_pipeline/test_R2.fastq.gz
+          gdown https://drive.google.com/uc?id=15IdZfGh_ZCWCOcfOW4Qdbxi42QQ2DB4F -O wgs_sv_pipeline/chr21.fa
 
       - name: Install snakemake
         run: conda create -c conda-forge -c bioconda -n snakemake snakemake-minimal
