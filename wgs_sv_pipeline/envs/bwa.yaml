@@ -4,5 +4,6 @@ channels:
   - conda-forge
 dependencies:
   - bwa=0.7.17
-  - samtools=1.19.2
+  - samtools=1.22.1
+  - bcftools=1.22
   - biopet-validatefastq

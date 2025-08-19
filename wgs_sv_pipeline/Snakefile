@@ -5,7 +5,7 @@ REF = "chr21.fa"
 
 rule all:
     input:
-        expand("sv_results/manta/{sample}/results/variants/diploidSV.vcf", sample=SAMPLES)
+        expand("results/{sample}_manta_sv.csv", sample=SAMPLES)
 
 ##################################
 # Validate fastq files
@@ -92,4 +92,21 @@ rule manta:
         """
         configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir sv_results/manta/{wildcards.sample}
         sv_results/manta/{wildcards.sample}/runWorkflow.py -m local -j {threads}
+        """
+
+#######################
+# VCF to CSV conversion
+#######################
+
+rule vcf_to_csv:
+    input:
+        "sv_results/manta/{sample}/results/variants/diploidSV.vcf"
+    output:
+        "results/{sample}_structural_variants.csv"
+    conda: "envs/bcftools.yaml"
+    shell:
+        """
+        bcftools query -f '%CHROM,%POS,%INFO/END,%INFO/SVLEN,%QUAL,%FILTER\n' {input} > {output}.tmp
+        echo "CHROM,START,END,SIZE,QUAL,FILTER" | cat - {output}.tmp > {output}
+        rm {output}.tmp
         """
