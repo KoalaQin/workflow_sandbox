@@ -103,7 +103,7 @@ rule vcf_to_csv:
         "sv_results/manta/{sample}/results/variants/diploidSV.vcf"
     output:
         "results/{sample}_manta_sv.csv"
-    conda: "envs/bcftools.yaml"
+    conda: "envs/bwa.yaml"
     shell:
         """
         bcftools query -f '%CHROM,%POS,%INFO/END,%INFO/SVLEN,%QUAL,%FILTER\n' {input} > {output}.tmp
