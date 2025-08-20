@@ -44,7 +44,6 @@ Quick Start
 1. Clone the repository
 ```
 git clone https://github.com/KoalaQin/workflow_sandbox.git
-cd workflow_sandbox
 ```
 
 2. Install snakemake in your conda environment
@@ -55,7 +54,8 @@ conda create -c conda-forge -c bioconda -n snakemake snakemake-minimal
 3. Run the workflow
 Move your files or change the paths in the Snakefile as needed.
 ```
-snakemake --cores 16 --use-conda
+cd workflow_sandbox/wgs_sv_pipeline
+conda run -n snakemake snakemake --cores 16 --use-conda
 ```
 
 This will produce:
