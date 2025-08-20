@@ -164,6 +164,7 @@ rule sv_annotate:
     shell:
         """
         docker run --rm \
+            -u $(id -u):$(id -g) \
             -v $PWD:$PWD \
             -w $PWD \
             {params.docker} \
