@@ -16,7 +16,10 @@ A Snakemake-based workflow for aligning whole-genome sequencing (WGS) reads and 
 4. Structural variant calling with Manta
     * So far, this pipeline only implemented Manta, but there are other tools available for SV calling (e.g., Delly, Lumpy) and they have been used as an ensemble method to improve sensitivity and specificity.
 
-5. Export of SV calls to CSV format
+5. Structural variants annotation with GATK SVAnnotate
+    * This step annotates the structural variants using the GATK SVAnnotate tool, which integrates various sources of information (e.g., gene annotations) to provide functional insights into the SVs.
+
+6. Export of SV calls to CSV format
 
     * Example data (chr21.fa, test_R1.fastq.gz, test_R2.fastq.gz) included for testing the GitHub Actions workflow.
 
