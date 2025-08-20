@@ -7,3 +7,4 @@ dependencies:
   - samtools=1.19.2
   - bcftools=1.19
   - biopet-validatefastq
+  - gffread

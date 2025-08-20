@@ -111,31 +111,64 @@ rule manta:
         bam="intermediate_files/alignments/{sample}.dupmarked.bam",
         ref=REF
     output:
-        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
+        "sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
     threads: 16
     conda: "envs/manta.yaml"
     shell:
         """
-        mkdir -p intermediate_files/sv_results/manta/{wildcards.sample}
-        configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir intermediate_files/sv_results/manta/{wildcards.sample}
-        intermediate_files/sv_results/manta/{wildcards.sample}/runWorkflow.py -m local -j {threads}
+        mkdir -p sv_results/manta/{wildcards.sample}
+        configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir sv_results/manta/{wildcards.sample}
+        sv_results/manta/{wildcards.sample}/runWorkflow.py -m local -j {threads}
         """
 
-#######################
+##################################
+# Prepare GTF for annotation
+##################################
+
+rule prepare_gtf:
+    input:
+        "gencode.v48.basic.annotation.gtf"
+    output:
+        temp("wgs_sv_pipeline/gencode.v48.basic.annotation.gtf.coding.gtf")
+    conda: "envs/bwa.yaml"
+    shell:
+        "gffread {input} -C -o {output}"
+
+##################################
+# SV Annotation
+##################################
+
+rule sv_annotate:
+    input:
+        vcf="sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz",
+        gtf="wgs_sv_pipeline/gencode.v48.basic.annotation.gtf.coding.gtf",
+    output:
+        vcf="sv_results/manta/{sample}/results/variants/diploidSV.annotated.vcf.gz"
+    container: "docker://broadinstitute/gatk:latest"
+    shell:
+        """
+        gatk SVAnnotate \
+            -V {input.vcf} \
+            --protein-coding-gtf {input.gtf} \
+            -O {output.vcf}
+        """
+
+
+##################################
 # VCF to CSV conversion
-#######################
+##################################
 
 rule vcf_to_csv:
     input:
-        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
+        "sv_results/manta/{sample}/results/variants/diploidSV.annotated.vcf.gz"
     output:
-        "results/{sample}_manta_sv.csv"
+        "sv_results/csv/{sample}_manta_sv.csv"
     conda: "envs/bwa.yaml"
     shell:
         """
-        mkdir -p results
-        bcftools query -f '%CHROM,%POS,%INFO/END,%INFO/SVLEN,%QUAL,%FILTER\n' {input} > {output}.tmp
-        echo "CHROM,START,END,SIZE,QUAL,FILTER" | cat - {output}.tmp > {output}
+        mkdir -p sv_results/csv
+        bcftools query -f '%CHROM,%POS,%INFO/END,%INFO/SVTYPE,%INFO/SVLEN,%QUAL,%FILTER\n' {input} > {output}.tmp
+        echo "CHROM,START,END,TYPE,SIZE,QUAL,FILTER" | cat - {output}.tmp > {output}
         rm {output}.tmp
 
         # Count lines (excluding header)
@@ -148,7 +181,7 @@ rule vcf_to_csv:
 
 rule cleanup:
     input:
-        expand("results/{sample}_manta_sv.csv", sample=SAMPLES)
+        expand("sv_results/csv/{sample}_manta_sv.csv", sample=SAMPLES)
     output:
         "cleanup.done"
     shell:
