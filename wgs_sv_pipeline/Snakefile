@@ -121,18 +121,33 @@ rule manta:
         sv_results/manta/{wildcards.sample}/runWorkflow.py -m local -j {threads}
         """
 
-##################################
-# Prepare GTF for annotation
-##################################
+#####################################
+# Preprocess Manta VCF for SVAnnotate
+#####################################
 
-rule prepare_gtf:
+rule sv_prep_for_annotate:
     input:
-        "gencode.v48.basic.annotation.gtf"
+        vcf="sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
     output:
-        temp("wgs_sv_pipeline/gencode.v48.basic.annotation.gtf.coding.gtf")
+        vcf=temp("sv_results/manta/{sample}/results/variants/diploidSV.forSVAnnotate.vcf.gz")
     conda: "envs/bwa.yaml"
     shell:
-        "gffread {input} -C -o {output}"
+        """
+        # decompress, transform, recompress
+        bcftools view -h {input.vcf} > header.vcf
+        bcftools view -H {input.vcf} | \
+            awk 'BEGIN{{OFS="\\t"}} {{
+                alt="<" $8;   # default symbolic ALT
+                split($8,info,";")
+                svtype="."
+                for(i in info){{ if(info[i] ~ /^SVTYPE=/){{ split(info[i],a,"="); svtype=a[2] }} }}
+                if(svtype!=".") alt="<" svtype ">"
+                $4="N"; $5=alt; print
+            }}' >> body.vcf
+        cat header.vcf body.vcf | bgzip -c > {output.vcf}
+        tabix -p vcf {output.vcf}
+        rm header.vcf body.vcf
+        """
 
 ##################################
 # SV Annotation
@@ -140,17 +155,22 @@ rule prepare_gtf:
 
 rule sv_annotate:
     input:
-        vcf="sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz",
-        gtf="wgs_sv_pipeline/gencode.v48.basic.annotation.gtf.coding.gtf",
+        vcf="sv_results/manta/{sample}/results/variants/diploidSV.forSVAnnotate.vcf.gz",
+        gtf="MANE.GRCh38.v1.4.ensembl_genomic.gtf"  # replace with protein-coding GTF if desired
     output:
         vcf="sv_results/manta/{sample}/results/variants/diploidSV.annotated.vcf.gz"
-    container: "docker://broadinstitute/gatk:latest"
+    params:
+        docker="broadinstitute/gatk:latest"
     shell:
         """
-        gatk SVAnnotate \
-            -V {input.vcf} \
-            --protein-coding-gtf {input.gtf} \
-            -O {output.vcf}
+        docker run --rm \
+            -v $PWD:$PWD \
+            -w $PWD \
+            {params.docker} \
+            gatk SVAnnotate \
+                -V {input.vcf} \
+                --protein-coding-gtf {input.gtf} \
+                -O {output.vcf}
         """
 
 
@@ -160,18 +180,21 @@ rule sv_annotate:
 
 rule vcf_to_csv:
     input:
-        "sv_results/manta/{sample}/results/variants/diploidSV.annotated.vcf.gz"
+        vcf="sv_results/manta/{sample}/results/variants/diploidSV.annotated.vcf.gz"
     output:
         "sv_results/csv/{sample}_manta_sv.csv"
     conda: "envs/bwa.yaml"
     shell:
         """
         mkdir -p sv_results/csv
-        bcftools query -f '%CHROM,%POS,%INFO/END,%INFO/SVTYPE,%INFO/SVLEN,%QUAL,%FILTER\n' {input} > {output}.tmp
-        echo "CHROM,START,END,TYPE,SIZE,QUAL,FILTER" | cat - {output}.tmp > {output}
-        rm {output}.tmp
+        echo "CHROM,START,END,TYPE,SIZE,QUAL,FILTER,PREDICTED_FUNCTIONAL_IMPACT" > {output}
+        bcftools query -f '%CHROM,%POS,%INFO/END,%INFO/SVTYPE,%INFO/SVLEN,%QUAL,%FILTER,%INFO\\n' {input.vcf} \
+        | awk -F',' 'BEGIN{{OFS=","}} {{
+            pf=""; split($8, a, ";");
+            for(i in a) if(a[i] ~ /^PREDICTED_/) pf = (pf=="" ? a[i] : pf"|"a[i]);
+            print $1,$2,$3,$4,$5,$6,$7,pf
+        }}' >> {output}
 
-        # Count lines (excluding header)
         echo "Number of structural variants found: $(( $(wc -l < {output}) - 1 ))"
         """
 
