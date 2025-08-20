@@ -22,6 +22,10 @@ jobs:
           gdown https://drive.google.com/uc?id=1VGT01sqblXHarMHjlkfs8ZjHIZykJt0R -O wgs_sv_pipeline/test_R2.fastq.gz
           gdown https://drive.google.com/uc?id=15IdZfGh_ZCWCOcfOW4Qdbxi42QQ2DB4F -O wgs_sv_pipeline/chr21.fa
 
+      - name: Download GTF file from Gencode
+        run: |
+          wget -qO- https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/release_1.4/MANE.GRCh38.v1.4.ensembl_genomic.gtf.gz | gunzip > wgs_sv_pipeline/MANE.GRCh38.v1.4.ensembl_genomic.gtf
+
       - name: Install snakemake
         run: conda create -c conda-forge -c bioconda -n snakemake snakemake-minimal
       - name: Run pipeline

@@ -111,34 +111,91 @@ rule manta:
         bam="intermediate_files/alignments/{sample}.dupmarked.bam",
         ref=REF
     output:
-        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
+        "sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
     threads: 16
     conda: "envs/manta.yaml"
     shell:
         """
-        mkdir -p intermediate_files/sv_results/manta/{wildcards.sample}
-        configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir intermediate_files/sv_results/manta/{wildcards.sample}
-        intermediate_files/sv_results/manta/{wildcards.sample}/runWorkflow.py -m local -j {threads}
+        mkdir -p sv_results/manta/{wildcards.sample}
+        configManta.py --bam {input.bam} --referenceFasta {input.ref} --runDir sv_results/manta/{wildcards.sample}
+        sv_results/manta/{wildcards.sample}/runWorkflow.py -m local -j {threads}
         """
 
-#######################
-# VCF to CSV conversion
-#######################
+#####################################
+# Preprocess Manta VCF for SVAnnotate
+#####################################
 
-rule vcf_to_csv:
+rule sv_prep_for_annotate:
     input:
-        "intermediate_files/sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
+        vcf="sv_results/manta/{sample}/results/variants/diploidSV.vcf.gz"
     output:
-        "results/{sample}_manta_sv.csv"
+        vcf=temp("sv_results/manta/{sample}/results/variants/diploidSV.forSVAnnotate.vcf.gz")
     conda: "envs/bwa.yaml"
     shell:
         """
-        mkdir -p results
-        bcftools query -f '%CHROM,%POS,%INFO/END,%INFO/SVLEN,%QUAL,%FILTER\n' {input} > {output}.tmp
-        echo "CHROM,START,END,SIZE,QUAL,FILTER" | cat - {output}.tmp > {output}
-        rm {output}.tmp
+        # decompress, transform, recompress
+        bcftools view -h {input.vcf} > header.vcf
+        bcftools view -H {input.vcf} | \
+            awk 'BEGIN{{OFS="\\t"}} {{
+                alt="<" $8;   # default symbolic ALT
+                split($8,info,";")
+                svtype="."
+                for(i in info){{ if(info[i] ~ /^SVTYPE=/){{ split(info[i],a,"="); svtype=a[2] }} }}
+                if(svtype!=".") alt="<" svtype ">"
+                $4="N"; $5=alt; print
+            }}' >> body.vcf
+        cat header.vcf body.vcf | bgzip -c > {output.vcf}
+        tabix -p vcf {output.vcf}
+        rm header.vcf body.vcf
+        """
 
-        # Count lines (excluding header)
+##################################
+# SV Annotation
+##################################
+
+rule sv_annotate:
+    input:
+        vcf="sv_results/manta/{sample}/results/variants/diploidSV.forSVAnnotate.vcf.gz",
+        gtf="MANE.GRCh38.v1.4.ensembl_genomic.gtf"  # replace with protein-coding GTF if desired
+    output:
+        vcf="sv_results/manta/{sample}/results/variants/diploidSV.annotated.vcf.gz"
+    params:
+        docker="broadinstitute/gatk:latest"
+    shell:
+        """
+        docker run --rm \
+            -u $(id -u):$(id -g) \
+            -v $PWD:$PWD \
+            -w $PWD \
+            {params.docker} \
+            gatk SVAnnotate \
+                -V {input.vcf} \
+                --protein-coding-gtf {input.gtf} \
+                -O {output.vcf}
+        """
+
+
+##################################
+# VCF to CSV conversion
+##################################
+
+rule vcf_to_csv:
+    input:
+        vcf="sv_results/manta/{sample}/results/variants/diploidSV.annotated.vcf.gz"
+    output:
+        "sv_results/csv/{sample}_manta_sv.csv"
+    conda: "envs/bwa.yaml"
+    shell:
+        """
+        mkdir -p sv_results/csv
+        echo "CHROM,START,END,TYPE,SIZE,QUAL,FILTER,PREDICTED_FUNCTIONAL_IMPACT" > {output}
+        bcftools query -f '%CHROM,%POS,%INFO/END,%INFO/SVTYPE,%INFO/SVLEN,%QUAL,%FILTER,%INFO\\n' {input.vcf} \
+        | awk -F',' 'BEGIN{{OFS=","}} {{
+            pf=""; split($8, a, ";");
+            for(i in a) if(a[i] ~ /^PREDICTED_/) pf = (pf=="" ? a[i] : pf"|"a[i]);
+            print $1,$2,$3,$4,$5,$6,$7,pf
+        }}' >> {output}
+
         echo "Number of structural variants found: $(( $(wc -l < {output}) - 1 ))"
         """
 
@@ -148,7 +205,7 @@ rule vcf_to_csv:
 
 rule cleanup:
     input:
-        expand("results/{sample}_manta_sv.csv", sample=SAMPLES)
+        expand("sv_results/csv/{sample}_manta_sv.csv", sample=SAMPLES)
     output:
         "cleanup.done"
     shell:

@@ -9,6 +9,7 @@
 *.sa
 *.root
 *.svg
+*.gtf
 sv_results/
 alignments/
 qc/
